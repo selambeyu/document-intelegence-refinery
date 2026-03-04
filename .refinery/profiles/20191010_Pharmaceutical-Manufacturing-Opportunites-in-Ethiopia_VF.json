@@ -1,0 +1,10 @@
+{
+  "origin_type": "mixed",
+  "layout_complexity": "table_heavy",
+  "language": {
+    "code": "en",
+    "confidence": 0.7421054840087891
+  },
+  "domain_hint": "medical",
+  "extraction_cost": "needs_layout_model"
+}

@@ -1,0 +1,10 @@
+{
+  "origin_type": "scanned_image",
+  "layout_complexity": "mixed",
+  "language": {
+    "code": "und",
+    "confidence": 0.0
+  },
+  "domain_hint": "general",
+  "extraction_cost": "needs_vision_model"
+}

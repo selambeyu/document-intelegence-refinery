@@ -1,0 +1,10 @@
+{
+  "origin_type": "native_digital",
+  "layout_complexity": "table_heavy",
+  "language": {
+    "code": "fi",
+    "confidence": 0.6132776737213135
+  },
+  "domain_hint": "financial",
+  "extraction_cost": "needs_layout_model"
+}
