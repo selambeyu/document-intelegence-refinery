@@ -1,0 +1,24 @@
+# Extraction thresholds (triage)
+triage:
+  char_threshold: 100
+  image_area_ratio_threshold: 0.5
+  table_heavy_threshold: 3
+  figure_heavy_ratio: 0.4
+
+# Router
+router:
+  confidence_escalation_threshold: 0.6
+
+# Strategy defaults (for reference)
+strategies:
+  fast:
+    confidence: 0.75
+    char_count_min: 50
+    image_ratio_max: 0.6
+    font_meta_weight: 0.3
+  layout:
+    confidence: 0.90
+  vision:
+    confidence: 0.65
+    budget_per_document: 1.0
+    cost_per_page: 0.02
