@@ -63,10 +63,7 @@ class LayoutExtractor(BaseExtractor):
         if path is not None and not path.exists():
             raise FileNotFoundError(f"Document not found: {path}")
         if self.prefer_docling and _DOCLING_AVAILABLE and path is not None:
-            try:
-                converter = DocumentConverter()
-                result = converter.convert(str(path))
-                return docling_result_to_document(result)
-            except Exception:
-                pass
+            converter = DocumentConverter()
+            result = converter.convert(str(path))
+            return docling_result_to_document(result)
         return _extract_pdfplumber(source)
