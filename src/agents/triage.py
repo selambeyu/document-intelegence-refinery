@@ -37,13 +37,15 @@ class TriageAgent:
             origin_type = self._detect_origin(pdf)
             layout_complexity = self._detect_layout(pdf)
             language = self._detect_language(pdf)
-            domain_hint = self._detect_domain_hint(pdf)
+            domain_id = self._detect_domain_id(pdf)
+            domain_hint = DomainHint(domain_id) if domain_id in [e.value for e in DomainHint] else DomainHint.GENERAL
             extraction_cost = self._infer_extraction_cost(origin_type, layout_complexity)
         return DocumentProfile(
             origin_type=origin_type,
             layout_complexity=layout_complexity,
             language=language,
             domain_hint=domain_hint,
+            domain_id=domain_id or domain_hint.value,
             extraction_cost=extraction_cost,
         )
 
@@ -191,6 +193,10 @@ class TriageAgent:
         return ratio >= 0.15
 
     def _detect_domain_hint(self, pdf: pdfplumber.PDF) -> DomainHint:
+        domain_id = self._detect_domain_id(pdf)
+        return DomainHint(domain_id) if domain_id in [e.value for e in DomainHint] else DomainHint.GENERAL
+
+    def _detect_domain_id(self, pdf: pdfplumber.PDF) -> str:
         samples = []
         for page in pdf.pages[:10]:
             text = page.extract_text()

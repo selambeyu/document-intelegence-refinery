@@ -87,6 +87,7 @@ class DocumentProfile(BaseModel):
     layout_complexity: LayoutComplexity
     language: DetectedLanguage = Field(default_factory=DetectedLanguage)
     domain_hint: DomainHint = DomainHint.GENERAL
+    domain_id: str = ""
     extraction_cost: ExtractionCost
 
 
@@ -123,6 +124,7 @@ class ExtractedDocument(BaseModel):
 
 
 class ProvenanceCitation(BaseModel):
+    """Single source citation: document_name, page_number, bbox, content_hash (threaded from extraction through query/audit)."""
     document_name: str = ""
     page_number: int = 0
     bbox: BoundingBox | None = None
@@ -137,6 +139,7 @@ class ProvenanceCitation(BaseModel):
 
 
 class ProvenanceChain(BaseModel):
+    """Chain of source citations (document_name, page, bbox, content_hash) attached to every query answer and used by audit to verify/reject claims."""
     citations: list[ProvenanceCitation] = Field(default_factory=list)
 
     @property
@@ -167,6 +170,7 @@ class LDU(BaseModel):
     parent_section: str = ""
     token_count: int = 0
     content_hash: str = ""
+    metadata: dict = Field(default_factory=dict)
 
     @field_validator("content_hash")
     @classmethod
