@@ -25,7 +25,7 @@ class TriageAgent:
         self.image_area_ratio_threshold = cfg.get("image_area_ratio_threshold", 0.5)
         self.table_heavy_threshold = cfg.get("table_heavy_threshold", 3)
         self.figure_heavy_ratio = cfg.get("figure_heavy_ratio", 0.4)
-        self.domain_hint_classifier = domain_hint_classifier or KeywordDomainHintClassifier()
+        self.domain_hint_classifier = domain_hint_classifier or KeywordDomainHintClassifier(config=config)
 
     def profile(self, source: Path | str | BinaryIO) -> DocumentProfile:
         path = None

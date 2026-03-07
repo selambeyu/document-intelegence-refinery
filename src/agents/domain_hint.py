@@ -29,9 +29,34 @@ KEYWORD_MAP = {
 }
 
 
+def _keyword_map_from_config(config: dict | None) -> dict[DomainHint, list[str]] | None:
+    if not config or "domain_keywords" not in config:
+        return None
+    raw = config["domain_keywords"]
+    if not raw or not isinstance(raw, dict):
+        return None
+    out: dict[DomainHint, list[str]] = {}
+    for key, words in raw.items():
+        if not isinstance(words, list):
+            continue
+        try:
+            hint = DomainHint(key.lower()) if isinstance(key, str) else key
+        except ValueError:
+            continue
+        if hint == DomainHint.GENERAL:
+            continue
+        out[hint] = [str(w) for w in words]
+    return out if out else None
+
+
 class KeywordDomainHintClassifier:
-    def __init__(self, keyword_map: dict[DomainHint, list[str]] | None = None):
-        self.keyword_map = keyword_map or KEYWORD_MAP
+    def __init__(
+        self,
+        keyword_map: dict[DomainHint, list[str]] | None = None,
+        config: dict | None = None,
+    ):
+        from_config = _keyword_map_from_config(config)
+        self.keyword_map = keyword_map or from_config or KEYWORD_MAP
 
     def classify(self, text: str) -> DomainHint:
         if not text or not text.strip():
