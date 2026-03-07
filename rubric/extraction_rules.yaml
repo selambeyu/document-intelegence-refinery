@@ -46,9 +46,9 @@ strategies:
     budget_per_document: 1.0   # VLM cost cap per document
     cost_per_page: 0.02
 
-# Domain keywords for triage domain_hint. Add keys under domain_keywords to
-# onboard new domains; keys must match DomainHint enum (financial, legal, technical,
-# medical, general). general is fallback and need not list keywords.
+# Domain keywords for triage domain_id/domain_hint. Add a new key under domain_keywords
+# to onboard a new document type without changing code. Add that key to extract_fact_domains
+# if you want fact extraction (e.g. SQL) for that type.
 domain_keywords:
   financial:
     - revenue
@@ -107,3 +107,11 @@ domain_keywords:
     - medical
     - pharmaceutical
     - dosage
+
+# Domains for which fact extraction (SQL fact table) runs. Add any domain_keywords key here.
+extract_fact_domains:
+  - financial
+  - general
+  - legal
+  - technical
+  - medical

@@ -93,9 +93,11 @@ def run_pipeline(
         engine = ChunkingEngine(config=chunk_cfg)
         ldus = engine.chunk(doc)
         validator = ChunkValidator(max_tokens=chunk_cfg.get("max_tokens", 512))
-        errors = validator.validate(ldus)
-        if errors:
-            print("ChunkValidator warnings:", errors[:5])
+        valid_ldus = validator.filter_valid(ldus)
+        if len(valid_ldus) < len(ldus):
+            errors = validator.validate(ldus)
+            print("ChunkValidator: dropped", len(ldus) - len(valid_ldus), "invalid LDU(s).", errors[:5])
+        ldus = valid_ldus
         index = build_pageindex(doc, ldus, use_llm_summary=False)
         pageindex_path = base / "pageindex" / f"{doc_id}.json"
         existing_has_sections = False
@@ -116,7 +118,7 @@ def run_pipeline(
         elif existing_has_sections:
             print("Skipping vector store update (0 LDUs; keeping previous chunks).")
         store = FactStore(db_path=base / "facts.db")
-        n_facts = extract_and_store_facts(doc_id, doc, ldus, profile, store)
+        n_facts = extract_and_store_facts(doc_id, doc, ldus, profile, store, config=rules)
         print("LDUs:", len(ldus), "PageIndex saved." if not (existing_has_sections and len(ldus) == 0) else "PageIndex preserved.", "Facts stored:", n_facts)
 
 

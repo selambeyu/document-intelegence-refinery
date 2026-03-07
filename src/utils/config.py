@@ -21,6 +21,7 @@ DEFAULTS = {
         "min_chunk_tokens": 16,
     },
     "domain_keywords": {},
+    "extract_fact_domains": ["financial", "general"],
 }
 
 

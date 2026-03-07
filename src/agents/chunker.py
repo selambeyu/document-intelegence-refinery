@@ -13,6 +13,13 @@ from src.models import (
     LDU,
 )
 
+_CROSS_REF_PATTERNS = [
+    (re.compile(r"\b(?:see\s+)?(?:Table\s+)(\d+)\b", re.I), "table"),
+    (re.compile(r"\b(?:see\s+)?(?:Figure\s+)(\d+)\b", re.I), "figure"),
+    (re.compile(r"\b(?:Appendix\s+)([A-Z0-9]+)\b", re.I), "appendix"),
+    (re.compile(r"\b(?:Section\s+)(\d+(?:\.\d+)*)\b", re.I), "section"),
+]
+
 
 def _token_count(text: str) -> int:
     return max(0, (len(text.split()) * 4) // 3)
@@ -44,22 +51,64 @@ def _is_numbered_list(text: str) -> bool:
     return bool(re.match(r"^\d+[.)]\s", lines[0])) and bool(re.match(r"^\d+[.)]\s", lines[1]))
 
 
+def _resolve_cross_refs(ldus: list[LDU]) -> None:
+    label_to_hash: dict[str, str] = {}
+    table_idx = 0
+    figure_idx = 0
+    for ldu in ldus:
+        if ldu.chunk_type == ChunkType.TABLE:
+            table_idx += 1
+            label_to_hash[f"Table {table_idx}"] = ldu.content_hash or ""
+        elif ldu.chunk_type == ChunkType.FIGURE:
+            figure_idx += 1
+            label_to_hash[f"Figure {figure_idx}"] = ldu.content_hash or ""
+
+    for ldu in ldus:
+        if ldu.chunk_type not in (ChunkType.TEXT, ChunkType.LIST) or not ldu.content:
+            continue
+        refs: list[dict[str, str]] = []
+        for pat, kind in _CROSS_REF_PATTERNS:
+            for m in pat.finditer(ldu.content):
+                label = m.group(0).strip()
+                num = m.group(1) if m.lastindex else ""
+                key = f"Table {num}" if kind == "table" else (f"Figure {num}" if kind == "figure" else label)
+                target_hash = label_to_hash.get(key)
+                if target_hash:
+                    refs.append({"label": label, "target_content_hash": target_hash})
+        if refs:
+            meta = dict(ldu.metadata) if ldu.metadata else {}
+            meta["cross_refs"] = refs
+            ldu.metadata = meta
+
+
 class ChunkValidator:
     def __init__(self, max_tokens: int = 512):
         self.max_tokens = max_tokens
 
+    def validate_single(self, ldu: LDU) -> list[str]:
+        errors: list[str] = []
+        if ldu.chunk_type == ChunkType.TABLE:
+            if not ldu.content.strip():
+                errors.append("TABLE has empty content (missing header/rows)")
+            else:
+                lines = ldu.content.strip().split("\n")
+                if not lines:
+                    errors.append("TABLE has no header row")
+        if ldu.chunk_type == ChunkType.TEXT and ldu.token_count > self.max_tokens:
+            errors.append(f"TEXT exceeds max_tokens ({ldu.token_count} > {self.max_tokens})")
+        if ldu.content.strip() and not (ldu.content_hash or "").strip():
+            errors.append("missing content_hash")
+        return errors
+
     def validate(self, ldus: list[LDU]) -> list[str]:
         errors: list[str] = []
         for i, ldu in enumerate(ldus):
-            if ldu.chunk_type == ChunkType.TABLE and not ldu.content.strip():
-                errors.append(f"LDU[{i}] TABLE has empty content (missing header/rows)")
-            if ldu.chunk_type == ChunkType.TABLE and "|" not in ldu.content and "\t" not in ldu.content and "\n" not in ldu.content and len(ldu.content) > 50:
-                pass
-            if ldu.token_count > self.max_tokens and ldu.chunk_type == ChunkType.TEXT:
-                errors.append(f"LDU[{i}] TEXT exceeds max_tokens ({ldu.token_count} > {self.max_tokens})")
-            if ldu.content.strip() and not (ldu.content_hash or "").strip():
-                errors.append(f"LDU[{i}] missing content_hash")
+            for e in self.validate_single(ldu):
+                errors.append(f"LDU[{i}] {e}")
         return errors
+
+    def filter_valid(self, ldus: list[LDU]) -> list[LDU]:
+        return [ldu for ldu in ldus if not self.validate_single(ldu)]
 
 
 class ChunkingEngine:
@@ -146,6 +195,7 @@ class ChunkingEngine:
                 continue
             ldus.append(self._figure_to_ldu(f, ""))
 
+        _resolve_cross_refs(ldus)
         return ldus
 
     def _table_to_ldu(self, t: ExtractedTable, parent_section: str) -> LDU:
@@ -171,6 +221,7 @@ class ChunkingEngine:
         page_refs = [f.page] if f.page else ([f.bbox.page] if f.bbox else [0])
         bbox = f.bbox
         tc = _token_count(content)
+        meta = {"caption": f.caption} if f.caption else {}
         return LDU(
             content=content,
             chunk_type=ChunkType.FIGURE,
@@ -179,6 +230,7 @@ class ChunkingEngine:
             parent_section=parent_section,
             token_count=tc,
             content_hash=_content_hash(content, page_refs, bbox),
+            metadata=meta,
         )
 
     def _flush_text_ldus(

@@ -28,8 +28,18 @@ def _extract_facts_from_text(text: str) -> list[tuple[str, str, str]]:
     return facts
 
 
-def extract_facts(doc: ExtractedDocument, ldus: list[LDU] | None = None, domain_hint: DomainHint = DomainHint.GENERAL) -> list[dict[str, Any]]:
-    if domain_hint != DomainHint.FINANCIAL and domain_hint != DomainHint.GENERAL:
+def extract_facts(
+    doc: ExtractedDocument,
+    ldus: list[LDU] | None = None,
+    domain_hint: DomainHint = DomainHint.GENERAL,
+    domain_id: str = "",
+    config: dict | None = None,
+) -> list[dict[str, Any]]:
+    extract_fact_domains = (config or {}).get("extract_fact_domains", ["financial", "general"])
+    domain_ok = (domain_id and domain_id in extract_fact_domains) or (
+        domain_hint.value in extract_fact_domains
+    )
+    if not domain_ok:
         return []
     facts: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()

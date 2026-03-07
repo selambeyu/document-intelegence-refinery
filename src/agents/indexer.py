@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -13,6 +14,45 @@ from src.models import (
     PageIndex,
     PageIndexSection,
 )
+
+
+def _heading_level(title: str) -> int:
+    s = title.strip()
+    if not s:
+        return 0
+    m = re.match(r"^(\d+(?:\.\d+)*)[.\s]", s)
+    if m:
+        return len(m.group(1).split("."))
+    if re.match(r"^(?:Chapter|Part|Section)\s+\d+", s, re.I):
+        return 1
+    return 1
+
+
+def _extract_key_entities(text: str, max_entities: int = 8) -> list[str]:
+    entities: list[str] = []
+    text = text.replace("\n", " ")
+    for m in re.finditer(r"\b(?:FY|F\.Y\.?|fiscal year)\s*[\s\-/]?\s*(\d{4}(?:/\d{2})?)\b", text, re.I):
+        entities.append(f"FY {m.group(1).strip()}")
+    for m in re.finditer(r"\b(\d{1,2})[\s\-/](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\-/]\d{2,4}\b", text, re.I):
+        entities.append(m.group(0))
+    for m in re.finditer(r"\b(?:[\d,]+(?:\.\d+)?)\s*(?:percent|%|million|billion|Birr|ETB|USD)\b", text, re.I):
+        entities.append(m.group(0).strip())
+    for m in re.finditer(r"\b(?:Ministry of|Federal|National|Ethiopian)\s+[\w\s]{2,40}\b", text):
+        ent = m.group(0).strip()
+        if len(ent) <= 50 and ent not in entities:
+            entities.append(ent)
+    for m in re.finditer(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b", text):
+        ent = m.group(0).strip()
+        if 3 <= len(ent) <= 45 and ent not in entities and ent.lower() not in ("the", "and", "for", "with"):
+            entities.append(ent)
+    seen = set()
+    out = []
+    for e in entities:
+        k = e.lower()[:40]
+        if k not in seen and len(out) < max_entities:
+            seen.add(k)
+            out.append(e)
+    return out[:max_entities]
 
 
 def _default_summary(section_title: str, section_text: str, max_chars: int = 200) -> str:
@@ -72,7 +112,7 @@ class PageIndexBuilder:
             sec = ldu.parent_section.strip() or "(no section)"
             by_section.setdefault(sec, []).append(ldu)
 
-        sections: list[PageIndexSection] = []
+        flat: list[PageIndexSection] = []
         for title, chunk_ldus in by_section.items():
             if title == "(no section)" and not chunk_ldus:
                 continue
@@ -91,20 +131,51 @@ class PageIndexBuilder:
             page_end = max(page_refs) if page_refs else 0
             section_text = "\n\n".join(parts)[:5000]
             summary = self._summary_fn(title, section_text)
-            sections.append(
+            key_entities = _extract_key_entities(section_text)
+            flat.append(
                 PageIndexSection(
                     title=title,
                     page_start=page_start,
                     page_end=page_end,
                     child_sections=[],
-                    key_entities=[],
+                    key_entities=key_entities,
                     summary=summary,
                     data_types_present=sorted(data_types),
                 )
             )
 
-        sections.sort(key=lambda s: (s.page_start, s.page_end))
-        return PageIndex(sections=sections)
+        flat.sort(key=lambda s: (s.page_start, s.page_end))
+        root = self._build_hierarchy(flat)
+        return PageIndex(sections=root)
+
+    def _build_hierarchy(self, flat: list[PageIndexSection]) -> list[PageIndexSection]:
+        if not flat:
+            return []
+        levels = [_heading_level(s.title) for s in flat]
+        stack: list[tuple[int, PageIndexSection]] = []
+        root: list[PageIndexSection] = []
+
+        for i, sec in enumerate(flat):
+            level = levels[i]
+            node = PageIndexSection(
+                title=sec.title,
+                page_start=sec.page_start,
+                page_end=sec.page_end,
+                child_sections=[],
+                key_entities=sec.key_entities,
+                summary=sec.summary,
+                data_types_present=sec.data_types_present,
+            )
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            if not stack:
+                root.append(node)
+            else:
+                parent = stack[-1][1]
+                parent.child_sections.append(node)
+            stack.append((level, node))
+
+        return root
 
 
 def build_pageindex(
@@ -128,19 +199,34 @@ def load_pageindex(path: Path | str) -> PageIndex:
 
 
 def pageindex_search(index: PageIndex, topic: str, top_k: int = 3) -> list[PageIndexSection]:
+    def collect(sec: PageIndexSection) -> list[PageIndexSection]:
+        out = [sec]
+        for ch in sec.child_sections:
+            out.extend(collect(ch))
+        return out
+
+    all_secs = []
+    for s in index.sections:
+        all_secs.extend(collect(s))
     topic_lower = topic.lower()
     scored = []
-    for sec in index.sections:
-        score = 0
+    for sec in all_secs:
+        score = 0.0
         if topic_lower in sec.title.lower():
             score += 2
         if topic_lower in sec.summary.lower():
             score += 1
+        for ent in sec.key_entities:
+            if topic_lower in ent.lower():
+                score += 1.5
         for w in topic_lower.split():
             if len(w) > 2 and w in sec.title.lower():
                 score += 1
             if len(w) > 2 and w in sec.summary.lower():
                 score += 0.5
+            for ent in sec.key_entities:
+                if len(w) > 2 and w in ent.lower():
+                    score += 0.5
         scored.append((score, sec))
     scored.sort(key=lambda x: -x[0])
     return [s for _, s in scored[:top_k]]

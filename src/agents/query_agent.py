@@ -159,6 +159,20 @@ def _tools_node(
             ) if hits else "No matching chunks found."
         elif name == "structured_query_tool" and fact_store:
             rows = structured_query(args.get("sql", "SELECT 1"), fact_store)
+            seen = set()
+            for r in rows:
+                if isinstance(r, dict):
+                    did = r.get("doc_id")
+                    page = r.get("page", 0)
+                    if did and (did, page) not in seen:
+                        seen.add((did, page))
+                        doc_name = doc_id_to_name.get(did, did) or did
+                        citations.append({
+                            "document_name": doc_name,
+                            "page_number": int(page) if page is not None else 0,
+                            "bbox": None,
+                            "content_hash": r.get("content_hash") or "",
+                        })
             content = "\n".join(str(r) for r in rows[:50]) if rows else "No rows returned."
         else:
             content = "Tool not available or invalid arguments."
@@ -242,34 +256,62 @@ class QueryAgent:
         if not use_ollama():
             require_api_key_for_query()
         doc_scope = ", ".join(doc_ids) if doc_ids else "all"
+        pre_hits = semantic_search(question, self._vector_store, doc_ids=doc_ids, k=k)
+        pre_citations: list[dict[str, Any]] = []
+        retrieved_block = ""
+        if pre_hits:
+            for ldu, _, did in pre_hits[:10]:
+                doc_name = self._doc_names.get(did, did) or did
+                pre_citations.append(_ldu_to_citation(ldu, doc_name))
+                retrieved_block += f"[{doc_name} p.{ldu.page_refs[0] if ldu.page_refs else '?'}]\n{ldu.content.strip()[:500]}\n\n"
+        if not pre_hits and doc_ids:
+            pre_hits = semantic_search(question, self._vector_store, doc_ids=None, k=k)
+            if pre_hits:
+                for ldu, _, did in pre_hits[:10]:
+                    doc_name = self._doc_names.get(did, did) or did
+                    pre_citations.append(_ldu_to_citation(ldu, doc_name))
+                    retrieved_block += f"[{doc_name} p.{ldu.page_refs[0] if ldu.page_refs else '?'}]\n{ldu.content.strip()[:500]}\n\n"
+                retrieved_block = "Note: No chunks matched the selected document(s); showing results from all documents.\n\n" + retrieved_block
+        prompt_parts = [
+            "Answer ONLY using the content returned by the tools or the retrieved content below. Do not use general knowledge.",
+            "If you were given 'Retrieved content' below, use it to answer the question. Only say 'No relevant content found in the selected documents' if the tools or retrieved content explicitly say 'No matching chunks found' or 'No sections found' and there is no excerpt to use.",
+            f"Search in docs: {doc_scope}.",
+        ]
+        if retrieved_block:
+            prompt_parts.append("Retrieved content (use this to answer if it matches the question):\n" + retrieved_block.strip())
+        prompt_parts.append(f"Question: {question}")
         initial: QueryState = {
-            "messages": [HumanMessage(content=(
-                "Answer ONLY using the content returned by the tools (pageindex, semantic search, fact table). "
-                "Do not use general knowledge. If the tools return 'No matching chunks found' or 'No sections found' "
-                "for the requested documents, say clearly: 'No relevant content found in the selected documents.' "
-                f"Search in docs: {doc_scope}.\n\nQuestion: {question}"
-            ))],
-            "citations": [],
+            "messages": [HumanMessage(content="\n\n".join(prompt_parts))],
+            "citations": pre_citations,
             "doc_ids": doc_ids,
         }
         final = self._graph.invoke(initial)
         messages = final.get("messages") or []
-        citations_raw = final.get("citations") or []
+        citations_raw = final.get("citations") or pre_citations
         answer_text = "No answer produced."
         for m in reversed(messages):
             if hasattr(m, "content") and m.content and isinstance(m.content, str) and m.content.strip():
                 answer_text = m.content.strip()
                 break
-        if doc_ids and not citations_raw and "no relevant content" not in answer_text.lower():
+        no_content_phrase = "no relevant content found in the selected documents"
+        if citations_raw and no_content_phrase in answer_text.lower():
+            excerpt = retrieved_block.strip()[:2000] if retrieved_block else ""
+            if excerpt:
+                answer_text = (
+                    "The following excerpts from the selected documents may relate to your question:\n\n"
+                    + excerpt
+                    + "\n\n(Source pages and hashes are in the citations below. If this does not answer your question, try rephrasing or selecting different documents.)"
+                )
+        if doc_ids and not citations_raw and no_content_phrase not in answer_text.lower():
             answer_text = (
                 "No relevant content found in the selected documents. "
-                "The documents may be unscanned images with no extracted text—try re-processing with Vision/OCR enabled (API key or Tesseract)."
+                "The document may have no indexed text (e.g. scanned images without OCR) or processing may have produced no chunks—try re-processing with layout/vision extraction."
             )
         citations = [
             ProvenanceCitation(
                 document_name=c.get("document_name", ""),
                 page_number=c.get("page_number", 0),
-                bbox=BoundingBox(**c["bbox"]) if c.get("bbox") else None,
+                bbox=BoundingBox(**c["bbox"]) if isinstance(c.get("bbox"), dict) else c.get("bbox"),
                 content_hash=c.get("content_hash", ""),
             )
             for c in citations_raw
