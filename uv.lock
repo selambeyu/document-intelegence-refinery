@@ -584,6 +584,7 @@ name = "doc-intle-refinery"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "chromadb" },
     { name = "docling" },
     { name = "fast-langdetect" },
     { name = "fastapi" },
@@ -613,13 +614,10 @@ dev = [
 mineru = [
     { name = "mineru" },
 ]
-rag = [
-    { name = "chromadb" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "chromadb", marker = "extra == 'rag'", specifier = ">=0.4.0" },
+    { name = "chromadb", specifier = ">=0.4.0" },
     { name = "docling", specifier = ">=2.76.0" },
     { name = "docling", marker = "extra == 'compare'", specifier = ">=2.0" },
     { name = "fast-langdetect", specifier = ">=1.0.0" },

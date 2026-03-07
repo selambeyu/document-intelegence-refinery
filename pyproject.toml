@@ -26,13 +26,14 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "python-multipart>=0.0.9",
+    "chromadb>=0.4.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 compare = ["docling>=2.0"]
 mineru = ["mineru>=0.3.0"]
-rag = ["chromadb>=0.4.0"]
+rag = []
 
 [project.scripts]
 refinery = "src.pipelines.run_pipeline:main"
