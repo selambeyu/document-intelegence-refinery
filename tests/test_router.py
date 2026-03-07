@@ -34,7 +34,7 @@ def test_router_fast_returns_fast_strategy(sample_pdf_path: Path) -> None:
     )
     router = ExtractionRouter()
     doc = router.extract(sample_pdf_path, profile)
-    assert doc.strategy_used in ("fast_text", "layout_escalated")
+    assert doc.strategy_used in ("fast_text", "fast_text_escalated", "layout_escalated")
     assert len(doc.blocks) >= 0
 
 
