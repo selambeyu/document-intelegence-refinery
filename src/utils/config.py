@@ -8,7 +8,19 @@ DEFAULTS = {
         "table_heavy_threshold": 3,
         "figure_heavy_ratio": 0.4,
     },
-    "router": {"confidence_escalation_threshold": 0.6},
+    "router": {
+        "confidence_escalation_threshold": 0.6,
+        "review_threshold": 0.5,
+        "escalate_to_vision_on_low_confidence": False,
+    },
+    "chunking": {
+        "max_tokens": 512,
+        "overlap_tokens": 32,
+        "respect_heading_boundaries": True,
+        "respect_table_boundaries": True,
+        "min_chunk_tokens": 16,
+    },
+    "domain_keywords": {},
 }
 
 
