@@ -40,6 +40,7 @@ def test_triage_returns_document_profile(sample_pdf_path: Path) -> None:
         DomainHint.MEDICAL,
         DomainHint.GENERAL,
     )
+    assert hasattr(profile, "domain_id") and isinstance(profile.domain_id, str)
     assert hasattr(profile.language, "code") and hasattr(profile.language, "confidence")
 
 
