@@ -1,15 +1,38 @@
-# Extraction thresholds (triage)
-triage:
-  char_threshold: 100
-  image_area_ratio_threshold: 0.5
-  table_heavy_threshold: 3
-  figure_heavy_ratio: 0.4
+# ------------------------------------------------------------------------------
+# Document Intelligence Refinery — extraction_rules.yaml
+# Override these to tune triage, router, strategies, chunking, and domain hints
+# without changing code. Add new domain keywords under domain_keywords to support
+# new document types.
+# ------------------------------------------------------------------------------
 
-# Router
+# Triage: heuristics for origin (digital vs scanned) and layout complexity.
+# Adjust if your corpus is mostly scanned or has many tables/figures.
+triage:
+  char_threshold: 100          # min chars per doc to consider native_digital
+  image_area_ratio_threshold: 0.5  # above this → scanned/mixed
+  table_heavy_threshold: 3    # tables per doc above which layout = table_heavy
+  figure_heavy_ratio: 0.4     # image area / page area above which = figure_heavy
+
+# Router: escalation and human-review gating.
+# confidence_escalation_threshold: below this, try next strategy (fast→layout→vision).
+# review_threshold: below this, review_flag is set so downstream can trigger human review.
+# escalate_to_vision_on_low_confidence: if true, allow third-level escalation to vision
+#   when layout still has low confidence (even when profile did not request vision).
 router:
   confidence_escalation_threshold: 0.6
+  review_threshold: 0.5
+  escalate_to_vision_on_low_confidence: false
 
-# Strategy defaults (for reference)
+# Chunking (for Phase 3 LDU engine): max token size, overlap, and heading rules.
+# Used when building Logical Document Units from ExtractedDocument.
+chunking:
+  max_tokens: 512
+  overlap_tokens: 32
+  respect_heading_boundaries: true
+  respect_table_boundaries: true
+  min_chunk_tokens: 16
+
+# Strategy-specific tunables (read by extractors and pipeline).
 strategies:
   fast:
     confidence: 0.75
@@ -20,5 +43,67 @@ strategies:
     confidence: 0.90
   vision:
     confidence: 0.65
-    budget_per_document: 1.0
+    budget_per_document: 1.0   # VLM cost cap per document
     cost_per_page: 0.02
+
+# Domain keywords for triage domain_hint. Add keys under domain_keywords to
+# onboard new domains; keys must match DomainHint enum (financial, legal, technical,
+# medical, general). general is fallback and need not list keywords.
+domain_keywords:
+  financial:
+    - revenue
+    - expense
+    - balance sheet
+    - income statement
+    - fiscal
+    - audit
+    - profit
+    - loss
+    - assets
+    - liabilities
+    - equity
+    - cash flow
+    - annual report
+    - financial statements
+    - tax
+    - budget
+    - expenditure
+    - appropriation
+  legal:
+    - whereas
+    - hereby
+    - hereinafter
+    - pursuant
+    - plaintiff
+    - defendant
+    - court
+    - agreement
+    - contract
+    - clause
+    - jurisdiction
+    - legal
+    - statute
+  technical:
+    - implementation
+    - algorithm
+    - api
+    - software
+    - system
+    - protocol
+    - configuration
+    - architecture
+    - module
+    - framework
+    - database
+  medical:
+    - patient
+    - clinical
+    - diagnosis
+    - treatment
+    - medication
+    - symptom
+    - therapy
+    - health
+    - medical
+    - pharmaceutical
+    - dosage
