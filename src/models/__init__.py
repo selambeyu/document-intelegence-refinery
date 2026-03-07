@@ -1,5 +1,6 @@
 from .schema import (
     BoundingBox,
+    ChunkType,
     DetectedLanguage,
     DocumentProfile,
     DomainHint,
@@ -20,6 +21,7 @@ from .schema import (
 
 __all__ = [
     "BoundingBox",
+    "ChunkType",
     "DetectedLanguage",
     "DocumentProfile",
     "DomainHint",
