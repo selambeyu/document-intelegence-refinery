@@ -3,9 +3,22 @@ import sys
 import time
 from pathlib import Path
 
-from src.agents import TriageAgent
+from src.agents import (
+    ChunkingEngine,
+    ChunkValidator,
+    TriageAgent,
+    build_pageindex,
+    extract_and_store_facts,
+    save_pageindex,
+)
 from src.router import ExtractionRouter
-from src.utils import ensure_refinery_dirs, get_refinery_base, load_rules
+from src.utils import (
+    ensure_refinery_dirs,
+    get_refinery_base,
+    load_rules,
+    VectorStore,
+)
+from src.utils.fact_store import FactStore
 
 COST_BY_STRATEGY = {
     "fast_text": 0.0,
@@ -38,7 +51,8 @@ def run_pipeline(
     rules = load_rules()
     triage = TriageAgent(config=rules)
     router = ExtractionRouter(
-        confidence_threshold=float(rules.get("router", {}).get("confidence_escalation_threshold", 0.6))
+        confidence_threshold=float(rules.get("router", {}).get("confidence_escalation_threshold", 0.6)),
+        config=rules,
     )
     profile = triage.profile(path)
     doc_id = path.stem
@@ -64,15 +78,74 @@ def run_pipeline(
         }
         if getattr(doc, "cost_actual", None) is not None:
             entry["cost_actual"] = doc.cost_actual
+        if getattr(doc, "review_flag", False):
+            entry["review_flag"] = True
         with open(ledger_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print("Strategy used:", doc.strategy_used)
     print("Number of blocks:", len(doc.blocks))
     print("Confidence:", doc.confidence)
+    if getattr(doc, "review_flag", False):
+        print("Review flagged: low confidence — consider human review")
+
+    if save_artifacts:
+        chunk_cfg = rules.get("chunking", {})
+        engine = ChunkingEngine(config=chunk_cfg)
+        ldus = engine.chunk(doc)
+        validator = ChunkValidator(max_tokens=chunk_cfg.get("max_tokens", 512))
+        errors = validator.validate(ldus)
+        if errors:
+            print("ChunkValidator warnings:", errors[:5])
+        index = build_pageindex(doc, ldus, use_llm_summary=False)
+        pageindex_path = base / "pageindex" / f"{doc_id}.json"
+        existing_has_sections = False
+        if pageindex_path.exists() and len(ldus) == 0:
+            try:
+                from src.agents.indexer import load_pageindex
+                existing = load_pageindex(pageindex_path)
+                existing_has_sections = len(existing.sections) > 0
+            except Exception:
+                pass
+        if not existing_has_sections or len(ldus) > 0:
+            save_pageindex(index, pageindex_path)
+        elif existing_has_sections:
+            print("Keeping existing PageIndex (current run produced 0 LDUs; previous extraction had content).")
+        vs = VectorStore(persist_directory=base / "vector_store")
+        if ldus:
+            vs.add_document(doc_id, ldus)
+        elif existing_has_sections:
+            print("Skipping vector store update (0 LDUs; keeping previous chunks).")
+        store = FactStore(db_path=base / "facts.db")
+        n_facts = extract_and_store_facts(doc_id, doc, ldus, profile, store)
+        print("LDUs:", len(ldus), "PageIndex saved." if not (existing_has_sections and len(ldus) == 0) else "PageIndex preserved.", "Facts stored:", n_facts)
 
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: refinery <path-to-pdf>", file=sys.stderr)
+        print("Usage: refinery <path-to-pdf> | refinery <path-to-folder>  (processes all PDFs in folder)", file=sys.stderr)
         sys.exit(1)
-    run_pipeline(sys.argv[1])
+    target = Path(sys.argv[1])
+    if not target.exists():
+        print(f"Error: path not found: {target}", file=sys.stderr)
+        sys.exit(1)
+    base = get_refinery_base()
+    if target.is_file():
+        if target.suffix.lower() != ".pdf":
+            print("Error: not a PDF file.", file=sys.stderr)
+            sys.exit(1)
+        run_pipeline(target, refinery_base=base)
+    else:
+        from src.utils.ingestion import collect_pdfs
+        try:
+            pdfs = collect_pdfs(target)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        if not pdfs:
+            print(f"No PDFs found under {target}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Processing {len(pdfs)} PDF(s)...")
+        for i, path in enumerate(pdfs, 1):
+            print(f"[{i}/{len(pdfs)}] {path.name}")
+            run_pipeline(path, refinery_base=base)
+        print("Batch done.")
