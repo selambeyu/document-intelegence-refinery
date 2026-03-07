@@ -1,0 +1,11 @@
+{
+  "origin_type": "scanned_image",
+  "layout_complexity": "figure_heavy",
+  "language": {
+    "code": "und",
+    "confidence": 0.0
+  },
+  "domain_hint": "general",
+  "domain_id": "general",
+  "extraction_cost": "needs_vision_model"
+}

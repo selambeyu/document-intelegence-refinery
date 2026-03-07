@@ -1,0 +1,11 @@
+{
+  "origin_type": "native_digital",
+  "layout_complexity": "table_heavy",
+  "language": {
+    "code": "en",
+    "confidence": 0.803623378276825
+  },
+  "domain_hint": "technical",
+  "domain_id": "technical",
+  "extraction_cost": "needs_layout_model"
+}
